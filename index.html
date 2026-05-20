@@ -1,0 +1,1695 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>SRMG Slide Builder</title>
+<style>
+  /* ---------- Tool chrome ---------- */
+  :root {
+    --brand-purple: #420a7b;
+    --brand-light:  #f3effa;
+    --highlight:    #5631bd;
+
+    --chrome-bg:    #161320;
+    --chrome-panel: #1f1a2e;
+    --chrome-line:  #2d2640;
+    --chrome-text:  #e8e4f0;
+    --chrome-muted: #8a82a0;
+    --chrome-accent:#a78bfa;
+
+    --workspace:    #4a4a52;
+    --slide-shadow: 0 14px 30px rgba(0,0,0,.4);
+
+    --positive: #2e7d32;
+    --negative: #c0392b;
+    --warn:     #c98a17;
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; }
+  body {
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Helvetica Neue", sans-serif;
+    color: var(--chrome-text);
+    background: var(--chrome-bg);
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+    overflow: hidden;
+  }
+
+  .app {
+    display: grid;
+    grid-template-columns: 380px 1fr;
+    height: 100vh;
+    overflow: hidden;
+  }
+  .app.collapsed { grid-template-columns: 44px 1fr; }
+
+  /* ----- Sidebar ----- */
+  .sidebar {
+    background: var(--chrome-panel);
+    border-right: 1px solid var(--chrome-line);
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    overflow: hidden;
+  }
+  .sidebar-head {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 14px 16px;
+    border-bottom: 1px solid var(--chrome-line);
+    flex-shrink: 0;
+  }
+  .brand-mark {
+    width: 28px; height: 28px;
+    border-radius: 7px;
+    background: linear-gradient(135deg, #6800f0 0%, #420a7b 100%);
+    display: grid; place-items: center;
+    font-weight: 900;
+    font-size: 13px;
+    color: #fff;
+    box-shadow: 0 4px 12px rgba(104,0,240,.35);
+  }
+  .brand-name {
+    font-weight: 700;
+    font-size: 14px;
+    letter-spacing: .2px;
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .icon-btn {
+    border: 0;
+    background: transparent;
+    color: var(--chrome-muted);
+    width: 30px; height: 30px;
+    border-radius: 6px;
+    cursor: pointer;
+    display: grid; place-items: center;
+    font-size: 16px;
+    transition: background .12s, color .12s;
+  }
+  .icon-btn:hover { background: rgba(255,255,255,.06); color: var(--chrome-text); }
+
+  .tabs {
+    display: flex;
+    border-bottom: 1px solid var(--chrome-line);
+    flex-shrink: 0;
+  }
+  .tab {
+    flex: 1;
+    background: transparent;
+    border: 0;
+    color: var(--chrome-muted);
+    font-size: 12px;
+    font-weight: 600;
+    padding: 10px 4px;
+    cursor: pointer;
+    border-bottom: 2px solid transparent;
+    transition: color .12s, border-color .12s;
+  }
+  .tab:hover { color: var(--chrome-text); }
+  .tab.active {
+    color: var(--chrome-accent);
+    border-bottom-color: var(--chrome-accent);
+  }
+
+  .tab-body {
+    padding: 14px 16px;
+    overflow: auto;
+    flex: 1;
+    min-height: 0;
+  }
+  .tab-body.hidden { display: none; }
+
+  textarea, .code-block {
+    width: 100%;
+    background: #0f0c1a;
+    color: #d6cffa;
+    border: 1px solid var(--chrome-line);
+    border-radius: 8px;
+    padding: 12px;
+    font-family: ui-monospace, SFMono-Regular, "JetBrains Mono", Consolas, monospace;
+    font-size: 11.5px;
+    line-height: 1.55;
+    resize: vertical;
+  }
+  textarea#jsonInput { height: 38vh; min-height: 220px; }
+  textarea#promptOutput { height: 50vh; min-height: 260px; }
+
+  .code-block {
+    white-space: pre-wrap;
+    word-break: break-word;
+    margin: 6px 0 12px;
+  }
+
+  .row { display: flex; gap: 8px; flex-wrap: wrap; }
+  .row.tight { gap: 6px; }
+  .row.between { justify-content: space-between; align-items: center; }
+
+  button.primary, button.secondary, button.danger, button.ghost {
+    border: 0;
+    border-radius: 8px;
+    padding: 8px 12px;
+    font-weight: 600;
+    font-size: 12px;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    transition: transform .08s, background .12s, opacity .12s;
+  }
+  button.primary { background: var(--brand-purple); color: #fff; }
+  button.primary:hover { background: var(--highlight); }
+  button.secondary { background: #2a2440; color: var(--chrome-text); }
+  button.secondary:hover { background: #352d52; }
+  button.danger { background: #4a1a1f; color: #ffb3b3; }
+  button.danger:hover { background: #5e2126; }
+  button.ghost { background: transparent; color: var(--chrome-muted); }
+  button.ghost:hover { color: var(--chrome-text); background: rgba(255,255,255,.05); }
+  button:disabled { opacity: .35; cursor: not-allowed; }
+  button:active:not(:disabled) { transform: translateY(1px); }
+
+  select, input[type=text], input[type=color] {
+    background: #0f0c1a;
+    color: var(--chrome-text);
+    border: 1px solid var(--chrome-line);
+    border-radius: 7px;
+    padding: 7px 10px;
+    font-size: 12px;
+    font-family: inherit;
+  }
+  input[type=color] { padding: 2px; width: 38px; height: 32px; cursor: pointer; }
+  input[type=checkbox] { accent-color: var(--chrome-accent); }
+
+  label.field {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    font-size: 11px;
+    color: var(--chrome-muted);
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: .4px;
+  }
+
+  .panel-hint {
+    background: rgba(167,139,250,.08);
+    border-left: 3px solid var(--chrome-accent);
+    padding: 10px 12px;
+    border-radius: 0 6px 6px 0;
+    font-size: 11.5px;
+    color: #bdb3d8;
+    line-height: 1.55;
+    margin: 12px 0;
+  }
+  .panel-hint b { color: var(--chrome-text); }
+
+  .status-bar {
+    border-top: 1px solid var(--chrome-line);
+    padding: 8px 16px;
+    font-size: 11px;
+    color: var(--chrome-muted);
+    background: #15101f;
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    min-height: 32px;
+  }
+  .status-dot {
+    width: 7px; height: 7px;
+    border-radius: 50%;
+    background: #5cd47e;
+    box-shadow: 0 0 6px rgba(92,212,126,.6);
+  }
+  .status-dot.warn { background: #f1c40f; box-shadow: 0 0 6px rgba(241,196,15,.6); }
+  .status-dot.err  { background: #e74c3c; box-shadow: 0 0 6px rgba(231,76,60,.6); }
+
+  h2.section { font-size: 12px; margin: 18px 0 8px; color: var(--chrome-muted); text-transform: uppercase; letter-spacing: .5px; font-weight: 700; }
+  h2.section:first-child { margin-top: 0; }
+
+  .kbd {
+    background: #0f0c1a;
+    border: 1px solid var(--chrome-line);
+    border-bottom-width: 2px;
+    border-radius: 4px;
+    padding: 1px 6px;
+    font-family: ui-monospace, monospace;
+    font-size: 10.5px;
+    color: var(--chrome-accent);
+  }
+
+  .schema-block { font-size: 11.5px; line-height: 1.55; color: #bdb3d8; }
+  .schema-block code { background: #0f0c1a; padding: 1px 5px; border-radius: 4px; color: #c8b8f5; font-size: 10.5px; }
+
+  /* Collapsed sidebar */
+  .collapsed .sidebar > *:not(.sidebar-head) { display: none; }
+  .collapsed .sidebar-head { padding: 14px 8px; }
+  .collapsed .brand-name { display: none; }
+
+  /* ----- Workspace ----- */
+  .workspace {
+    background: var(--workspace);
+    overflow: auto;
+    position: relative;
+    min-width: 0;
+  }
+
+  .top-toolbar {
+    position: sticky;
+    top: 0;
+    z-index: 50;
+    background: rgba(34, 32, 50, .92);
+    backdrop-filter: blur(8px);
+    border-bottom: 1px solid var(--chrome-line);
+    padding: 10px 16px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+  .top-toolbar .divider {
+    width: 1px;
+    height: 22px;
+    background: var(--chrome-line);
+    margin: 0 4px;
+  }
+  .top-toolbar .grow { flex: 1; }
+  .top-toolbar .grid-toggle {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    color: var(--chrome-muted);
+    font-size: 12px;
+  }
+
+  #deck {
+    display: flex;
+    flex-direction: column;
+    gap: 32px;
+    align-items: center;
+    padding: 28px 16px 80px;
+  }
+
+  .empty-state {
+    color: var(--chrome-muted);
+    text-align: center;
+    padding: 80px 20px;
+    font-size: 14px;
+  }
+
+  /* ----- Slide ----- */
+  .slide {
+    width: 1122px;
+    height: 681px;
+    background: #fff;
+    color: #333;
+    position: relative;
+    overflow: hidden;
+    box-shadow: var(--slide-shadow);
+    font-family: "Aptos", "Aptos Narrow", "Segoe UI", Calibri, Arial, sans-serif;
+    page-break-after: always;
+    break-after: page;
+  }
+  .slide.portrait { width: 794px; height: 1123px; }
+  .slide.compact { width: 1280px; height: 720px; } /* alt PPT 16:9 */
+
+  .slide-tag {
+    position: absolute;
+    top: -22px;
+    left: 0;
+    font-size: 11px;
+    color: rgba(255,255,255,.55);
+    font-family: ui-monospace, monospace;
+  }
+
+  .slide-header {
+    position: absolute;
+    left: 56px; right: 56px; top: 42px;
+    height: 78px;
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    border-bottom: 2px solid #eee;
+    padding-bottom: 10px;
+  }
+  .title-group {
+    border-left: 7px solid var(--brand-purple);
+    padding-left: 16px;
+    min-width: 420px;
+  }
+  .title-group h1 { font-size: 27px; line-height: 1.15; margin: 0; color: #222; font-weight: 700; }
+  .title-group p  { margin: 5px 0 0; color: #666; font-size: 14px; }
+
+  .logo-box {
+    height: 56px;
+    max-width: 220px;
+    display: flex;
+    justify-content: flex-end;
+    align-items: flex-start;
+  }
+  .logo-box img { max-width: 100%; max-height: 100%; object-fit: contain; }
+
+  .canvas-layer {
+    position: absolute;
+    left: 0; top: 0;
+    width: 100%; height: 100%;
+  }
+
+  /* ----- Blocks (positioned children of canvas-layer) ----- */
+  .block {
+    position: absolute;
+    background: #fff;
+    border: 1px solid #e3e0ea;
+    border-radius: 10px;
+    box-shadow: 0 4px 10px rgba(0,0,0,.06);
+    overflow: hidden;
+    transition: box-shadow .15s;
+  }
+  .block.no-chrome {
+    background: transparent;
+    border: 0;
+    box-shadow: none;
+  }
+  .block.selected {
+    outline: 2px solid var(--highlight);
+    outline-offset: 2px;
+    box-shadow: 0 6px 18px rgba(86,49,189,.25);
+  }
+  .block-content {
+    width: 100%;
+    height: 100%;
+    padding: 14px 16px;
+    overflow: hidden;
+  }
+  .block.no-chrome .block-content { padding: 6px 8px; }
+
+  /* drag/resize handles */
+  .move-handle, .resize-handle {
+    position: absolute;
+    z-index: 30;
+    opacity: 0;
+    transition: opacity .12s;
+  }
+  .block:hover .move-handle,
+  .block:hover .resize-handle,
+  .block.selected .move-handle,
+  .block.selected .resize-handle { opacity: 1; }
+
+  .move-handle {
+    left: 6px; top: 6px;
+    width: 22px; height: 22px;
+    border-radius: 6px;
+    background: var(--brand-purple);
+    color: #fff;
+    display: grid; place-items: center;
+    cursor: grab;
+    font-size: 12px;
+    user-select: none;
+    touch-action: none;
+  }
+  .move-handle:active { cursor: grabbing; }
+
+  .resize-handle {
+    right: 0; bottom: 0;
+    width: 18px; height: 18px;
+    cursor: nwse-resize;
+    background:
+      linear-gradient(135deg, transparent 50%, var(--brand-purple) 50%);
+    touch-action: none;
+  }
+  .coord-tip {
+    position: absolute;
+    left: 30px; top: 6px;
+    background: #222;
+    color: #fff;
+    font-size: 10px;
+    padding: 2px 6px;
+    border-radius: 3px;
+    font-family: ui-monospace, monospace;
+    pointer-events: none;
+    opacity: 0;
+    z-index: 30;
+  }
+  .block.dragging .coord-tip { opacity: 1; }
+
+  [contenteditable="true"] { outline: none; }
+  [contenteditable="true"]:focus {
+    background: rgba(86,49,189,.06);
+    box-shadow: inset 0 0 0 1px rgba(86,49,189,.25);
+    border-radius: 3px;
+  }
+
+  /* ----- Block type styles (slide content) ----- */
+
+  /* statPanel */
+  .stat-title, .card-title, .stage-title {
+    font-size: 16px;
+    font-weight: 800;
+    color: var(--brand-purple);
+    text-transform: uppercase;
+    letter-spacing: .3px;
+    margin: 0 0 10px;
+  }
+  .badge {
+    display: inline-block;
+    background: var(--brand-purple);
+    color: #fff;
+    border-radius: 999px;
+    padding: 4px 11px;
+    font-size: 12px;
+    font-weight: 800;
+    margin-bottom: 12px;
+  }
+  .stat-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 12px;
+    background: #f7f5fb;
+    border: 1px solid #ece8f4;
+    border-radius: 8px;
+    padding: 8px 11px;
+    margin: 8px 0;
+    font-size: 13px;
+  }
+  .stat-row .v {
+    display: flex; align-items: baseline; gap: 6px;
+  }
+  .stat-row strong { font-size: 20px; color: #222; }
+  .stat-row small  { color: var(--positive); font-weight: 700; font-size: 12px; }
+
+  .note-box {
+    background: #f4f1fa;
+    border-left: 4px solid var(--brand-purple);
+    padding: 10px 12px;
+    border-radius: 0 6px 6px 0;
+    font-size: 12px;
+    line-height: 1.5;
+    color: #4a365e;
+    margin-top: 10px;
+  }
+  .note-box b { color: var(--brand-purple); }
+
+  /* stage */
+  .stage-card {
+    width: 100%; height: 100%;
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    padding: 14px 16px;
+  }
+  .stage-card.variant-light    { background: linear-gradient(135deg, #ffffff 0%, #f3effa 100%); color: #333; }
+  .stage-card.variant-medium   { background: linear-gradient(135deg, #f3effa 0%, #d1c4e9 100%); color: #333; }
+  .stage-card.variant-bold     { background: linear-gradient(135deg, #b39ddb 0%, #9575cd 100%); color: #fff; }
+  .stage-card.variant-dark     { background: linear-gradient(135deg, #7e57c2 0%, #420a7b 100%); color: #fff; }
+  .stage-card.variant-success  { background: linear-gradient(135deg, #e8f5e9 0%, #c8e6c9 100%); color: #1b5e20; border: 2px solid #a5d6a7; }
+  .stage-card.variant-warning  { background: linear-gradient(135deg, #fff3e0 0%, #ffe0b2 100%); color: #6e3b00; border: 2px solid #ffcc80; }
+
+  .stage-badge {
+    width: 44px; height: 44px;
+    border-radius: 50%;
+    background: #fff;
+    color: var(--brand-purple);
+    display: grid; place-items: center;
+    font-size: 18px;
+    font-weight: 900;
+    flex-shrink: 0;
+    box-shadow: 0 2px 5px rgba(0,0,0,.18);
+    border: 3px solid rgba(255,255,255,.6);
+  }
+  .stage-card.variant-bold .stage-badge,
+  .stage-card.variant-dark .stage-badge {
+    background: rgba(255,255,255,.18);
+    color: #fff;
+    border-color: rgba(255,255,255,.35);
+  }
+  .stage-card.variant-success .stage-badge {
+    background: var(--positive);
+    color: #fff;
+    border-color: #81c784;
+  }
+
+  .stage-info { flex: 1; min-width: 0; }
+  .stage-info .stage-title { font-size: 16px; margin: 0 0 4px; color: inherit; }
+  .stage-card.variant-bold .stage-info .stage-title,
+  .stage-card.variant-dark .stage-info .stage-title { color: #fff; }
+
+  .stage-details {
+    font-size: 12px;
+    display: flex;
+    gap: 12px;
+    align-items: center;
+    margin-bottom: 6px;
+    opacity: .9;
+    flex-wrap: wrap;
+  }
+  .stage-details .sep { opacity: .5; }
+  .action-list {
+    display: inline-flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    font-size: 11px;
+    background: rgba(0,0,0,.06);
+    padding: 5px 10px;
+    border-radius: 6px;
+  }
+  .stage-card.variant-bold .action-list,
+  .stage-card.variant-dark .action-list { background: rgba(255,255,255,.2); }
+  .action-item::before { content: '•'; margin-right: 4px; opacity: .6; }
+
+  /* bulletList */
+  .bullet-list { margin: 6px 0 0; padding-left: 18px; font-size: 13px; line-height: 1.6; color: #333; }
+  .bullet-list li { margin-bottom: 4px; }
+  .bullet-list li::marker { color: var(--brand-purple); }
+
+  /* keyValueGrid */
+  .kv-grid {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 8px;
+    margin-top: 8px;
+  }
+  .kv-grid.two { grid-template-columns: 1fr 1fr; }
+  .kv-item {
+    background: #faf8fd;
+    border: 1px solid #ece8f4;
+    border-radius: 8px;
+    padding: 8px 10px;
+    font-size: 12px;
+  }
+  .kv-item .label { color: #666; font-size: 10.5px; text-transform: uppercase; letter-spacing: .3px; margin-bottom: 2px; }
+  .kv-item .value { color: var(--brand-purple); font-weight: 700; font-size: 14px; }
+
+  /* quote */
+  .quote-block { font-style: italic; color: #444; font-size: 15px; line-height: 1.55; position: relative; padding-left: 28px; }
+  .quote-block::before { content: '“'; position: absolute; left: -2px; top: -12px; font-size: 56px; color: var(--brand-purple); font-family: Georgia, serif; line-height: 1; }
+  .quote-author { display: block; margin-top: 10px; font-style: normal; font-weight: 700; color: var(--brand-purple); font-size: 12px; text-transform: uppercase; letter-spacing: .3px; }
+
+  /* image */
+  .img-wrap { width: 100%; height: 100%; display: flex; flex-direction: column; }
+  .img-wrap img { width: 100%; flex: 1; min-height: 0; object-fit: cover; border-radius: 6px; }
+  .img-wrap .caption { font-size: 11px; color: #666; margin-top: 6px; text-align: center; }
+
+  /* heading */
+  .big-heading {
+    font-size: 28px;
+    font-weight: 800;
+    color: var(--brand-purple);
+    line-height: 1.15;
+    margin: 0;
+  }
+  .big-heading.center { text-align: center; }
+  .big-heading.accent {
+    background: linear-gradient(135deg, var(--brand-purple), #9b57d3);
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
+  }
+
+  /* noteBox standalone block */
+  .block.type-noteBox .block-content { padding: 0; }
+  .block.type-noteBox .note-box { margin: 0; height: 100%; border-radius: 8px; }
+
+  /* ----- Print ----- */
+  @page { size: 297mm 180mm; margin: 0; }
+  @page portraitPage { size: A4 portrait; margin: 0; }
+  @media print {
+    body { background: #fff; overflow: visible; }
+    .app { display: block; height: auto; }
+    .sidebar, .top-toolbar, .status-bar { display: none !important; }
+    .workspace { background: #fff; padding: 0; overflow: visible; }
+    #deck { display: block; padding: 0; gap: 0; }
+    .slide {
+      box-shadow: none;
+      margin: 0;
+      width: 297mm;
+      height: 180mm;
+      page-break-after: always;
+      break-after: page;
+    }
+    .slide.portrait { page: portraitPage; width: 210mm; height: 297mm; }
+    .move-handle, .resize-handle, .coord-tip { display: none !important; }
+    .block.selected { outline: none; box-shadow: 0 4px 10px rgba(0,0,0,.06); }
+    [contenteditable="true"]:focus { background: transparent; box-shadow: none; }
+    .slide-tag { display: none; }
+  }
+</style>
+</head>
+<body>
+<div class="app" id="app">
+
+  <!-- ============== SIDEBAR ============== -->
+  <aside class="sidebar">
+    <div class="sidebar-head">
+      <div class="brand-mark">S</div>
+      <div class="brand-name">SRMG Slide Builder</div>
+      <button class="icon-btn" id="collapseBtn" title="Collapse panel">‹</button>
+    </div>
+
+    <div class="tabs">
+      <button class="tab active" data-tab="json">JSON</button>
+      <button class="tab" data-tab="templates">Templates</button>
+      <button class="tab" data-tab="ai">AI Prompt</button>
+      <button class="tab" data-tab="help">Help</button>
+    </div>
+
+    <!-- JSON tab -->
+    <div class="tab-body" data-pane="json">
+      <h2 class="section">Deck JSON</h2>
+      <textarea id="jsonInput" spellcheck="false"></textarea>
+      <div class="row tight" style="margin-top:10px;">
+        <button class="primary" id="renderBtn">↻ Render</button>
+        <button class="secondary" id="syncBtn">⇡ Sync from slides</button>
+        <button class="secondary" id="downloadJsonBtn">⬇ Download JSON</button>
+        <button class="secondary" id="importJsonBtn">⬆ Import file</button>
+        <input type="file" id="jsonFile" accept="application/json,.json" hidden>
+      </div>
+      <div class="panel-hint">
+        <b>Render</b> rebuilds slides from JSON. <b>Sync</b> writes your live edits (text, positions, sizes) back into JSON without losing block types.
+      </div>
+
+      <h2 class="section">Theme</h2>
+      <div class="row tight" style="align-items:center;">
+        <label class="field" style="flex:1;">
+          Brand purple
+          <input type="color" id="brandColor" value="#420a7b">
+        </label>
+        <label class="field" style="flex:1;">
+          Highlight
+          <input type="color" id="highlightColor" value="#5631bd">
+        </label>
+      </div>
+      <label class="field" style="margin-top:10px;">
+        Logo URL (all slides)
+        <input type="text" id="logoUrl" placeholder="https://...">
+      </label>
+    </div>
+
+    <!-- Templates tab -->
+    <div class="tab-body hidden" data-pane="templates">
+      <h2 class="section">Load a sample</h2>
+      <p style="font-size:12px;color:var(--chrome-muted);margin:0 0 12px;line-height:1.5;">
+        Pick one to replace the current deck. You can mix block types after loading.
+      </p>
+      <div class="row" style="flex-direction:column;">
+        <button class="secondary" data-template="ksa">📊 KSA Contracts (your sample)</button>
+        <button class="secondary" data-template="workflow">🔄 Relocation Workflow</button>
+        <button class="secondary" data-template="qreview">📈 Quarterly Review</button>
+        <button class="secondary" data-template="project">🎯 Project Status</button>
+        <button class="secondary" data-template="blank">⬜ Blank deck</button>
+      </div>
+    </div>
+
+    <!-- AI Prompt tab -->
+    <div class="tab-body hidden" data-pane="ai">
+      <h2 class="section">Generate JSON with AI</h2>
+      <p style="font-size:12px;color:var(--chrome-muted);margin:0 0 10px;line-height:1.55;">
+        Copy this prompt, paste it into Claude / ChatGPT / Gemini, and append your raw content at the end. The AI returns JSON you paste into the JSON tab.
+      </p>
+      <div class="row tight" style="margin-bottom:10px;">
+        <button class="primary" id="copyPromptBtn">📋 Copy prompt to clipboard</button>
+        <button class="secondary" id="appendContentBtn">+ Append my content stub</button>
+      </div>
+      <textarea id="promptOutput" spellcheck="false" readonly></textarea>
+    </div>
+
+    <!-- Help tab -->
+    <div class="tab-body hidden" data-pane="help">
+      <h2 class="section">Shortcuts</h2>
+      <div class="schema-block" style="margin-bottom:14px;">
+        <div><span class="kbd">Click</span> a card to select it</div>
+        <div><span class="kbd">Drag</span> the purple handle to move</div>
+        <div><span class="kbd">Drag</span> bottom-right corner to resize</div>
+        <div><span class="kbd">↑↓←→</span> nudge by 1px</div>
+        <div><span class="kbd">Shift</span>+arrows = 10px</div>
+        <div><span class="kbd">Del</span> delete selected block</div>
+        <div><span class="kbd">Ctrl/Cmd</span>+<span class="kbd">D</span> duplicate</div>
+        <div><span class="kbd">Esc</span> deselect</div>
+      </div>
+
+      <h2 class="section">Block types</h2>
+      <div class="schema-block">
+        <p><code>statPanel</code> — titled card with numeric rows and an optional note.</p>
+        <p><code>stage</code> — numbered process step with trigger / responsible / actions. Variants: light, medium, bold, dark, success, warning.</p>
+        <p><code>bulletList</code> — titled bullet list.</p>
+        <p><code>keyValueGrid</code> — label/value pairs in 1 or 2 columns.</p>
+        <p><code>quote</code> — pull quote with author.</p>
+        <p><code>noteBox</code> — highlighted note callout (no card chrome).</p>
+        <p><code>heading</code> — large headline (center / accent options).</p>
+        <p><code>image</code> — image with optional caption.</p>
+        <p><code>html</code> — raw HTML escape hatch.</p>
+      </div>
+
+      <h2 class="section">Canvas</h2>
+      <div class="schema-block">
+        <p>Landscape slide: <code>1122 × 681</code> px. Header occupies y=0–130. Content starts at <code>y ≈ 145</code>. Margins: <code>x=56</code> left, content ends <code>x=1066</code>.</p>
+        <p>Portrait slide: <code>794 × 1123</code> px.</p>
+      </div>
+    </div>
+
+    <div class="status-bar">
+      <span class="status-dot" id="statusDot"></span>
+      <span id="status">Ready</span>
+    </div>
+  </aside>
+
+  <!-- ============== WORKSPACE ============== -->
+  <main class="workspace">
+    <div class="top-toolbar">
+      <button class="primary" id="addSlideBtn">+ Slide</button>
+      <button class="secondary" id="duplicateSlideBtn">⎘ Duplicate Slide</button>
+      <button class="danger" id="deleteSlideBtn">🗑 Delete Slide</button>
+      <span class="divider"></span>
+      <select id="addBlockSelect" title="Add a card to current slide">
+        <option value="">+ Add card...</option>
+        <option value="statPanel">Stat Panel</option>
+        <option value="stage">Stage</option>
+        <option value="bulletList">Bullet List</option>
+        <option value="keyValueGrid">Key/Value Grid</option>
+        <option value="quote">Quote</option>
+        <option value="noteBox">Note Box</option>
+        <option value="heading">Heading</option>
+        <option value="image">Image</option>
+        <option value="html">Raw HTML</option>
+      </select>
+      <button class="secondary" id="duplicateBlockBtn" disabled>⎘ Duplicate</button>
+      <button class="danger" id="deleteBlockBtn" disabled>🗑 Delete</button>
+      <span class="divider"></span>
+      <label class="grid-toggle">
+        <input type="checkbox" id="snapGrid" checked> Snap to 8px
+      </label>
+      <span class="grow"></span>
+      <button class="secondary" id="printBtn">⎙ Export PDF</button>
+    </div>
+    <div id="deck"></div>
+  </main>
+</div>
+
+<script>
+/* ===========================================================
+   STATE
+   =========================================================== */
+const DEFAULT_LOGO = "https://upload.wikimedia.org/wikipedia/commons/0/04/Saudi_Research_and_Media_Group_New_Logo.png";
+
+const BLANK_DECK = {
+  theme: { brandPurple: "#420a7b", highlight: "#5631bd", logo: DEFAULT_LOGO },
+  slides: [{
+    id: "slide-intro",
+    orientation: "landscape",
+    title: "New Deck",
+    subtitle: "Click any text to edit",
+    blocks: []
+  }]
+};
+
+let deckState = structuredClone(BLANK_DECK);
+let selectedSlideIndex = 0;
+let selectedBlockEl = null;
+let snapEnabled = true;
+
+const SNAP = 8;
+
+const $ = sel => document.querySelector(sel);
+const $$ = sel => document.querySelectorAll(sel);
+const jsonInput = $('#jsonInput');
+const deckEl = $('#deck');
+const statusEl = $('#status');
+const statusDot = $('#statusDot');
+
+/* ===========================================================
+   UTILS
+   =========================================================== */
+function uid(prefix='b') { return `${prefix}-${Math.random().toString(36).slice(2, 8)}`; }
+function pretty(o) { return JSON.stringify(o, null, 2); }
+function clamp(v, mi, ma) { return Math.max(mi, Math.min(ma, v)); }
+function snap(v) { return snapEnabled ? Math.round(v / SNAP) * SNAP : Math.round(v); }
+function escapeHtml(s) { return String(s ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+
+function setStatus(msg, kind='ok') {
+  statusEl.textContent = msg;
+  statusDot.className = 'status-dot' + (kind === 'warn' ? ' warn' : kind === 'err' ? ' err' : '');
+}
+
+function applyTheme() {
+  const t = deckState.theme || {};
+  document.documentElement.style.setProperty('--brand-purple', t.brandPurple || '#420a7b');
+  document.documentElement.style.setProperty('--highlight', t.highlight || '#5631bd');
+  $('#brandColor').value = t.brandPurple || '#420a7b';
+  $('#highlightColor').value = t.highlight || '#5631bd';
+  $('#logoUrl').value = t.logo || '';
+}
+
+/* ===========================================================
+   RENDER
+   =========================================================== */
+function renderDeck() {
+  applyTheme();
+  deckEl.innerHTML = '';
+  selectedBlockEl = null;
+  updateSelectionUI();
+
+  if (!deckState.slides || deckState.slides.length === 0) {
+    deckEl.innerHTML = `<div class="empty-state">No slides. Click <b>+ Slide</b> to start, or load a template.</div>`;
+    return;
+  }
+
+  deckState.slides.forEach((slide, si) => {
+    deckEl.appendChild(renderSlide(slide, si));
+  });
+
+  setStatus(`Rendered ${deckState.slides.length} slide(s) · ${countBlocks()} blocks`);
+}
+
+function countBlocks() {
+  return deckState.slides.reduce((n, s) => n + (s.blocks?.length || 0), 0);
+}
+
+function renderSlide(slide, si) {
+  const wrap = document.createElement('section');
+  wrap.className = `slide ${slide.orientation === 'portrait' ? 'portrait' : ''}`;
+  wrap.dataset.slideIndex = si;
+  wrap.tabIndex = -1;
+
+  const logo = slide.logo || deckState.theme?.logo || DEFAULT_LOGO;
+
+  wrap.innerHTML = `
+    <div class="slide-tag">Slide ${si + 1} of ${deckState.slides.length} · ${escapeHtml(slide.id || '')}</div>
+    <div class="slide-header">
+      <div class="title-group">
+        <h1 contenteditable="true" data-bind="slides.${si}.title" spellcheck="false">${escapeHtml(slide.title || 'Untitled')}</h1>
+        <p contenteditable="true" data-bind="slides.${si}.subtitle" spellcheck="false">${escapeHtml(slide.subtitle || '')}</p>
+      </div>
+      <div class="logo-box"><img src="${escapeHtml(logo)}" alt="Logo"></div>
+    </div>
+    <div class="canvas-layer"></div>
+  `;
+
+  const layer = wrap.querySelector('.canvas-layer');
+  (slide.blocks || []).forEach((block, bi) => {
+    layer.appendChild(renderBlock(block, si, bi));
+  });
+
+  // Click on slide background = select this slide
+  wrap.addEventListener('mousedown', (e) => {
+    if (e.target === wrap || e.target.classList.contains('canvas-layer') || e.target.classList.contains('slide-header')) {
+      selectedSlideIndex = si;
+      selectBlock(null);
+    }
+  });
+
+  bindHeaderEdits(wrap);
+  return wrap;
+}
+
+function renderBlock(block, si, bi) {
+  const el = document.createElement('article');
+  el.className = `block type-${block.type || 'html'}`;
+  if (block.noChrome || ['noteBox','heading'].includes(block.type)) el.classList.add('no-chrome');
+  el.dataset.slideIndex = si;
+  el.dataset.blockIndex = bi;
+  el.dataset.blockId = block.id || uid();
+  el.style.left   = `${block.x ?? 60}px`;
+  el.style.top    = `${block.y ?? 145}px`;
+  el.style.width  = `${block.w ?? 280}px`;
+  el.style.height = `${block.h ?? 180}px`;
+
+  el.innerHTML = `
+    <div class="block-content">${renderBlockContent(block, si, bi)}</div>
+    <div class="move-handle" title="Drag to move">⊞</div>
+    <div class="coord-tip"></div>
+    <div class="resize-handle" title="Drag to resize"></div>
+  `;
+
+  // Click anywhere on block selects it (but don't steal contenteditable focus)
+  el.addEventListener('mousedown', (e) => {
+    if (e.target.classList.contains('move-handle') || e.target.classList.contains('resize-handle')) return;
+    selectBlock(el);
+  });
+
+  attachDrag(el);
+  attachResize(el);
+  return el;
+}
+
+function renderBlockContent(block, si, bi) {
+  const base = `slides.${si}.blocks.${bi}`;
+  switch (block.type) {
+
+    case 'statPanel': {
+      const rows = (block.rows || []).map((r, ri) => `
+        <div class="stat-row">
+          <span contenteditable="true" data-bind="${base}.rows.${ri}.label">${escapeHtml(r.label || '')}</span>
+          <div class="v">
+            <strong contenteditable="true" data-bind="${base}.rows.${ri}.value">${escapeHtml(r.value || '')}</strong>
+            <small contenteditable="true" data-bind="${base}.rows.${ri}.note">${escapeHtml(r.note || '')}</small>
+          </div>
+        </div>`).join('');
+      return `
+        <div class="stat-title" contenteditable="true" data-bind="${base}.title">${escapeHtml(block.title || 'Stat Panel')}</div>
+        ${block.badge !== undefined ? `<span class="badge" contenteditable="true" data-bind="${base}.badge">${escapeHtml(block.badge)}</span>` : ''}
+        ${rows}
+        ${block.note !== undefined ? `<div class="note-box" contenteditable="true" data-bind="${base}.note">${escapeHtml(block.note)}</div>` : ''}
+      `;
+    }
+
+    case 'stage': {
+      const variant = block.variant || 'light';
+      const actions = (block.actions || []).map((a, ai) => `<span class="action-item" contenteditable="true" data-bind="${base}.actions.${ai}">${escapeHtml(a)}</span>`).join('');
+      return `
+        <div class="stage-card variant-${variant}">
+          <div class="stage-badge" contenteditable="true" data-bind="${base}.number">${escapeHtml(block.number || '1')}</div>
+          <div class="stage-info">
+            <div class="stage-title" contenteditable="true" data-bind="${base}.title">${escapeHtml(block.title || 'Stage')}</div>
+            <div class="stage-details">
+              <span><strong>Trigger:</strong> <span contenteditable="true" data-bind="${base}.trigger">${escapeHtml(block.trigger || '')}</span></span>
+              <span class="sep">•</span>
+              <span><strong>Responsible:</strong> <span contenteditable="true" data-bind="${base}.responsible">${escapeHtml(block.responsible || '')}</span></span>
+            </div>
+            ${actions ? `<div class="action-list">${actions}</div>` : ''}
+          </div>
+        </div>`;
+    }
+
+    case 'bulletList': {
+      const items = (block.items || []).map((it, ii) => `<li contenteditable="true" data-bind="${base}.items.${ii}">${escapeHtml(it)}</li>`).join('');
+      return `
+        <div class="card-title" contenteditable="true" data-bind="${base}.title">${escapeHtml(block.title || 'List')}</div>
+        <ul class="bullet-list">${items}</ul>`;
+    }
+
+    case 'keyValueGrid': {
+      const cols = block.columns === 2 ? 'two' : '';
+      const items = (block.items || []).map((it, ii) => `
+        <div class="kv-item">
+          <div class="label" contenteditable="true" data-bind="${base}.items.${ii}.label">${escapeHtml(it.label || '')}</div>
+          <div class="value" contenteditable="true" data-bind="${base}.items.${ii}.value">${escapeHtml(it.value || '')}</div>
+        </div>`).join('');
+      return `
+        <div class="card-title" contenteditable="true" data-bind="${base}.title">${escapeHtml(block.title || 'Metrics')}</div>
+        <div class="kv-grid ${cols}">${items}</div>`;
+    }
+
+    case 'quote': {
+      return `
+        <div class="quote-block">
+          <span contenteditable="true" data-bind="${base}.text">${escapeHtml(block.text || 'Quote text goes here.')}</span>
+          <span class="quote-author" contenteditable="true" data-bind="${base}.author">— ${escapeHtml(block.author || 'Author')}</span>
+        </div>`;
+    }
+
+    case 'noteBox': {
+      return `<div class="note-box"><b contenteditable="true" data-bind="${base}.title">${escapeHtml(block.title || 'Note:')}</b> <span contenteditable="true" data-bind="${base}.text">${escapeHtml(block.text || 'Important context goes here.')}</span></div>`;
+    }
+
+    case 'heading': {
+      const cls = [
+        'big-heading',
+        block.align === 'center' ? 'center' : '',
+        block.accent ? 'accent' : ''
+      ].filter(Boolean).join(' ');
+      return `<h2 class="${cls}" contenteditable="true" data-bind="${base}.text">${escapeHtml(block.text || 'Big Heading')}</h2>`;
+    }
+
+    case 'image': {
+      return `
+        <div class="img-wrap">
+          <img src="${escapeHtml(block.src || 'https://via.placeholder.com/600x400?text=Image')}" alt="${escapeHtml(block.alt || '')}">
+          ${block.caption !== undefined ? `<div class="caption" contenteditable="true" data-bind="${base}.caption">${escapeHtml(block.caption)}</div>` : ''}
+        </div>`;
+    }
+
+    case 'html':
+    default: {
+      // raw html block: contenteditable on the whole content
+      return `<div contenteditable="true" data-bind="${base}.html">${block.html || '<div class="card-title">Editable Card</div><p>Type your content here.</p>'}</div>`;
+    }
+  }
+}
+
+/* ===========================================================
+   EDIT BINDING
+   =========================================================== */
+function bindHeaderEdits(slideEl) {
+  slideEl.querySelectorAll('[data-bind]').forEach(el => attachFieldEditor(el));
+}
+
+function attachFieldEditor(el) {
+  // For html blocks we save innerHTML, everything else uses innerText to keep it clean
+  const isHtml = el.dataset.bind.endsWith('.html');
+  el.addEventListener('input', () => {
+    const val = isHtml ? el.innerHTML : el.innerText.trim();
+    setByPath(deckState, el.dataset.bind, val);
+    setStatus('Edited · use ⇡ Sync to update JSON view', 'warn');
+  });
+  // Paste as plain text (except html blocks)
+  if (!isHtml) {
+    el.addEventListener('paste', e => {
+      e.preventDefault();
+      const text = (e.clipboardData || window.clipboardData).getData('text/plain');
+      document.execCommand('insertText', false, text);
+    });
+  }
+}
+
+function setByPath(obj, path, value) {
+  const parts = path.split('.');
+  let cur = obj;
+  for (let i = 0; i < parts.length - 1; i++) {
+    const k = parts[i];
+    cur = cur[k];
+    if (cur === undefined) return;
+  }
+  cur[parts[parts.length - 1]] = value;
+}
+
+// Bind editors to any field once the deck is rendered
+function bindAllEditors() {
+  $$('[data-bind]').forEach(el => {
+    if (el.dataset.bound) return;
+    el.dataset.bound = '1';
+    attachFieldEditor(el);
+  });
+}
+
+/* ===========================================================
+   SELECTION
+   =========================================================== */
+function selectBlock(el) {
+  $$('.block.selected').forEach(x => x.classList.remove('selected'));
+  selectedBlockEl = el;
+  if (el) {
+    el.classList.add('selected');
+    selectedSlideIndex = Number(el.dataset.slideIndex);
+  }
+  updateSelectionUI();
+}
+
+function updateSelectionUI() {
+  const has = Boolean(selectedBlockEl);
+  $('#duplicateBlockBtn').disabled = !has;
+  $('#deleteBlockBtn').disabled = !has;
+}
+
+/* ===========================================================
+   DRAG + RESIZE
+   =========================================================== */
+function attachDrag(el) {
+  const handle = el.querySelector('.move-handle');
+  const tip = el.querySelector('.coord-tip');
+
+  handle.addEventListener('pointerdown', (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    selectBlock(el);
+    const slide = el.closest('.slide');
+    const startX = e.clientX, startY = e.clientY;
+    const startLeft = parseFloat(el.style.left), startTop = parseFloat(el.style.top);
+    handle.setPointerCapture(e.pointerId);
+    el.classList.add('dragging');
+
+    const move = (ev) => {
+      const dx = ev.clientX - startX, dy = ev.clientY - startY;
+      const nx = clamp(snap(startLeft + dx), 0, slide.clientWidth - el.offsetWidth);
+      const ny = clamp(snap(startTop  + dy), 0, slide.clientHeight - el.offsetHeight);
+      el.style.left = `${nx}px`;
+      el.style.top  = `${ny}px`;
+      tip.textContent = `${nx}, ${ny}`;
+    };
+    const up = (ev) => {
+      try { handle.releasePointerCapture(ev.pointerId); } catch {}
+      handle.removeEventListener('pointermove', move);
+      handle.removeEventListener('pointerup', up);
+      handle.removeEventListener('pointercancel', up);
+      el.classList.remove('dragging');
+      commitGeometry(el);
+    };
+    handle.addEventListener('pointermove', move);
+    handle.addEventListener('pointerup', up);
+    handle.addEventListener('pointercancel', up);
+  });
+}
+
+function attachResize(el) {
+  const handle = el.querySelector('.resize-handle');
+  const tip = el.querySelector('.coord-tip');
+
+  handle.addEventListener('pointerdown', (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    selectBlock(el);
+    const slide = el.closest('.slide');
+    const startX = e.clientX, startY = e.clientY;
+    const startW = el.offsetWidth, startH = el.offsetHeight;
+    const left = parseFloat(el.style.left), top = parseFloat(el.style.top);
+    handle.setPointerCapture(e.pointerId);
+    el.classList.add('dragging');
+
+    const move = (ev) => {
+      const nw = clamp(snap(startW + ev.clientX - startX), 100, slide.clientWidth - left);
+      const nh = clamp(snap(startH + ev.clientY - startY), 60,  slide.clientHeight - top);
+      el.style.width  = `${nw}px`;
+      el.style.height = `${nh}px`;
+      tip.textContent = `${nw} × ${nh}`;
+    };
+    const up = (ev) => {
+      try { handle.releasePointerCapture(ev.pointerId); } catch {}
+      handle.removeEventListener('pointermove', move);
+      handle.removeEventListener('pointerup', up);
+      handle.removeEventListener('pointercancel', up);
+      el.classList.remove('dragging');
+      commitGeometry(el);
+    };
+    handle.addEventListener('pointermove', move);
+    handle.addEventListener('pointerup', up);
+    handle.addEventListener('pointercancel', up);
+  });
+}
+
+function commitGeometry(el) {
+  const si = Number(el.dataset.slideIndex);
+  const bi = Number(el.dataset.blockIndex);
+  const block = deckState.slides[si].blocks[bi];
+  block.x = Math.round(parseFloat(el.style.left));
+  block.y = Math.round(parseFloat(el.style.top));
+  block.w = Math.round(parseFloat(el.style.width));
+  block.h = Math.round(parseFloat(el.style.height));
+  setStatus(`Block moved · ${block.w}×${block.h} at ${block.x},${block.y}`, 'warn');
+}
+
+/* ===========================================================
+   SYNC TO TEXTAREA (preserves block types)
+   =========================================================== */
+function syncToTextarea() {
+  // commit any contenteditable values that may not have fired input yet
+  $$('[data-bind]').forEach(el => {
+    const isHtml = el.dataset.bind.endsWith('.html');
+    const val = isHtml ? el.innerHTML : el.innerText.trim();
+    setByPath(deckState, el.dataset.bind, val);
+  });
+  // geometry
+  $$('.block').forEach(el => commitGeometry(el));
+
+  jsonInput.value = pretty(deckState);
+  setStatus('JSON synced from slides', 'ok');
+}
+
+/* ===========================================================
+   ADD / DELETE / DUPLICATE
+   =========================================================== */
+function newBlock(type, slide) {
+  const stack = (slide.blocks || []).length;
+  const baseY = 145 + stack * 12;
+  const id = uid(type);
+  const defaults = {
+    statPanel: { id, type, x: 56, y: baseY, w: 320, h: 260,
+      title: 'Stat Panel', badge: 'Total: 100',
+      rows: [{ label: 'Item A', value: '60', note: '60%' }, { label: 'Item B', value: '40', note: '40%' }],
+      note: 'Add context here.' },
+    stage: { id, type, x: 56, y: baseY, w: 650, h: 90, variant: 'medium',
+      number: '1', title: 'Stage Title', trigger: 'Event', responsible: 'Team',
+      actions: ['Action one', 'Action two'] },
+    bulletList: { id, type, x: 56, y: baseY, w: 320, h: 220,
+      title: 'Highlights', items: ['First point', 'Second point', 'Third point'] },
+    keyValueGrid: { id, type, x: 56, y: baseY, w: 380, h: 200, columns: 2,
+      title: 'Metrics',
+      items: [{label:'Revenue', value:'$1.2M'},{label:'Users', value:'42k'},{label:'Growth', value:'+18%'},{label:'NPS', value:'62'}] },
+    quote: { id, type, x: 56, y: baseY, w: 480, h: 160, text: 'A short, memorable quote.', author: 'Speaker Name' },
+    noteBox: { id, type, x: 56, y: baseY, w: 600, h: 80, title: 'Note:', text: 'Important context.' },
+    heading: { id, type, x: 56, y: baseY, w: 700, h: 70, text: 'Section Heading', align: 'left', accent: false },
+    image: { id, type, x: 56, y: baseY, w: 360, h: 240, src: 'https://via.placeholder.com/720x480?text=Image', alt: '', caption: 'Image caption' },
+    html: { id, type, x: 56, y: baseY, w: 320, h: 180, html: '<div class="card-title">Editable Card</div><p>Type anything here.</p>' }
+  };
+  return defaults[type] || defaults.html;
+}
+
+function addBlock(type) {
+  const slide = deckState.slides[selectedSlideIndex];
+  if (!slide) return;
+  slide.blocks = slide.blocks || [];
+  slide.blocks.push(newBlock(type, slide));
+  renderDeck();
+  bindAllEditors();
+  // select the new block
+  const slideEl = deckEl.children[selectedSlideIndex];
+  const last = slideEl?.querySelectorAll('.block');
+  if (last && last.length) selectBlock(last[last.length - 1]);
+  jsonInput.value = pretty(deckState);
+}
+
+function deleteBlock() {
+  if (!selectedBlockEl) return;
+  const si = Number(selectedBlockEl.dataset.slideIndex);
+  const bi = Number(selectedBlockEl.dataset.blockIndex);
+  deckState.slides[si].blocks.splice(bi, 1);
+  renderDeck();
+  bindAllEditors();
+  jsonInput.value = pretty(deckState);
+}
+
+function duplicateBlock() {
+  if (!selectedBlockEl) return;
+  syncToTextarea();
+  const si = Number(selectedBlockEl.dataset.slideIndex);
+  const bi = Number(selectedBlockEl.dataset.blockIndex);
+  const clone = structuredClone(deckState.slides[si].blocks[bi]);
+  clone.id = uid('copy');
+  clone.x = (clone.x || 56) + 24;
+  clone.y = (clone.y || 145) + 24;
+  deckState.slides[si].blocks.splice(bi + 1, 0, clone);
+  renderDeck();
+  bindAllEditors();
+  jsonInput.value = pretty(deckState);
+}
+
+function addSlide() {
+  syncToTextarea();
+  const n = deckState.slides.length + 1;
+  deckState.slides.push({
+    id: `slide-${n}`,
+    orientation: 'landscape',
+    title: `Slide ${n}`,
+    subtitle: '',
+    blocks: []
+  });
+  selectedSlideIndex = deckState.slides.length - 1;
+  renderDeck();
+  bindAllEditors();
+  jsonInput.value = pretty(deckState);
+  // scroll to it
+  const slides = deckEl.querySelectorAll('.slide');
+  slides[slides.length - 1]?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+function duplicateSlide() {
+  syncToTextarea();
+  if (!deckState.slides[selectedSlideIndex]) return;
+  const clone = structuredClone(deckState.slides[selectedSlideIndex]);
+  clone.id = `${clone.id}-copy`;
+  deckState.slides.splice(selectedSlideIndex + 1, 0, clone);
+  selectedSlideIndex++;
+  renderDeck();
+  bindAllEditors();
+  jsonInput.value = pretty(deckState);
+}
+
+function deleteSlide() {
+  if (deckState.slides.length <= 1) {
+    setStatus('Cannot delete the last slide.', 'warn');
+    return;
+  }
+  if (!confirm(`Delete slide "${deckState.slides[selectedSlideIndex]?.title}"?`)) return;
+  deckState.slides.splice(selectedSlideIndex, 1);
+  selectedSlideIndex = clamp(selectedSlideIndex, 0, deckState.slides.length - 1);
+  renderDeck();
+  bindAllEditors();
+  jsonInput.value = pretty(deckState);
+}
+
+/* ===========================================================
+   JSON LOAD / DOWNLOAD / IMPORT
+   =========================================================== */
+function loadFromTextarea() {
+  try {
+    const next = JSON.parse(jsonInput.value);
+    if (!Array.isArray(next.slides)) throw new Error('JSON must have a "slides" array.');
+    deckState = next;
+    selectedSlideIndex = 0;
+    renderDeck();
+    bindAllEditors();
+    setStatus(`Loaded ${deckState.slides.length} slide(s) from JSON`, 'ok');
+  } catch (err) {
+    setStatus(`JSON error: ${err.message}`, 'err');
+  }
+}
+
+function downloadJson() {
+  syncToTextarea();
+  const blob = new Blob([pretty(deckState)], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `srmg-deck-${Date.now()}.json`;
+  a.click();
+  URL.revokeObjectURL(url);
+  setStatus('JSON downloaded', 'ok');
+}
+
+function importJson() { $('#jsonFile').click(); }
+
+$('#jsonFile').addEventListener('change', (e) => {
+  const f = e.target.files?.[0];
+  if (!f) return;
+  const r = new FileReader();
+  r.onload = () => {
+    jsonInput.value = r.result;
+    loadFromTextarea();
+  };
+  r.readAsText(f);
+  e.target.value = '';
+});
+
+function printPdf() {
+  syncToTextarea();
+  selectBlock(null);
+  setTimeout(() => window.print(), 80);
+}
+
+/* ===========================================================
+   TEMPLATES
+   =========================================================== */
+const TEMPLATES = {
+  ksa: {
+    theme: { brandPurple: '#420a7b', highlight: '#5631bd', logo: DEFAULT_LOGO },
+    slides: [{
+      id: 'ksa-contracts', orientation: 'landscape',
+      title: 'KSA Contract Analysis', subtitle: 'Comparing Old and New Contracts in KSA',
+      blocks: [
+        { id:'old-contracts', type:'statPanel', x:56, y:145, w:330, h:380,
+          title:'Old Contracts', badge:'Total: 473',
+          rows:[{label:'Saudi', value:'271', note:'57%'},{label:'Non-Saudi', value:'202', note:'43%'}],
+          note:'Confidentiality signed separately. 2-month indemnity not included.' },
+        { id:'new-contracts', type:'statPanel', x:396, y:145, w:330, h:380,
+          title:'New Contracts', badge:'Total: 241',
+          rows:[{label:'Saudi', value:'155', note:'64%'},{label:'Non-Saudi', value:'86', note:'36%'}],
+          note:'Confidentiality part of contract. 2-month indemnity if terminated without cause.' },
+        { id:'timeline', type:'statPanel', x:736, y:145, w:330, h:380,
+          title:'Conversion Timeline', badge:'155 New Saudi',
+          rows:[{label:'1-2 years left', value:'51'},{label:'2-3 years left', value:'50'},{label:'>3 years left', value:'54'}] },
+        { id:'indemnity-note', type:'noteBox', x:56, y:550, w:1010, h:80,
+          title:'Indemnity Clause:', text:'Applies to fixed and indefinite contracts. If terminated without cause, the other party is entitled to 2 months total salary.' }
+      ]
+    }]
+  },
+
+  workflow: {
+    theme: { brandPurple: '#420a7b', highlight: '#5631bd', logo: DEFAULT_LOGO },
+    slides: [{
+      id: 'workflow', orientation: 'landscape',
+      title: 'Relocation Process Workflow', subtitle: 'Full Lifecycle & Support Services',
+      blocks: [
+        { id:'s1', type:'stage', x:56, y:145, w:650, h:85, variant:'light',
+          number:'1', title:'Signing Contract', trigger:'Offer Acceptance', responsible:'Asharq team',
+          actions:['Offer Letter','Contract Sign','System Entry'] },
+        { id:'s2', type:'stage', x:56, y:240, w:650, h:85, variant:'medium',
+          number:'2', title:'Visa Application', trigger:'Signed Contract', responsible:'SRMG team',
+          actions:['Medical Check','Embassy Visa'] },
+        { id:'s3', type:'stage', x:56, y:335, w:650, h:85, variant:'bold',
+          number:'3', title:'First Arrival', trigger:'Visa Issued', responsible:'Asharq team',
+          actions:['Travel Booking','Temporary Accommodation'] },
+        { id:'s4', type:'stage', x:56, y:430, w:650, h:85, variant:'dark',
+          number:'4', title:'Onboarding', trigger:'Arrival', responsible:'SRMG team',
+          actions:['Iqama Issue','Work Permit','Medical Checkup'] },
+        { id:'s5', type:'stage', x:56, y:525, w:650, h:85, variant:'success',
+          number:'✓', title:'Process Completed', trigger:'All Stages Done', responsible:'All teams',
+          actions:['Permanent Housing','Family Settlement'] },
+        { id:'support', type:'bulletList', x:736, y:240, w:330, h:280,
+          title:'Relocation Support (Optional)',
+          items:['Concurrent with stages 2–4','Trigger: Signed Contract','Responsible: SRMG team','House Searching','Schools & community'] }
+      ]
+    }]
+  },
+
+  qreview: {
+    theme: { brandPurple: '#420a7b', highlight: '#5631bd', logo: DEFAULT_LOGO },
+    slides: [
+      {
+        id:'q-overview', orientation:'landscape',
+        title:'Q4 Performance Review', subtitle:'Strong close to fiscal year',
+        blocks: [
+          { id:'h1', type:'heading', x:56, y:150, w:1010, h:70, text:'Three numbers that defined Q4', align:'left', accent:true },
+          { id:'kv1', type:'keyValueGrid', x:56, y:240, w:1010, h:140, columns:2,
+            title:'Headline metrics',
+            items:[
+              {label:'Revenue', value:'$4.8M'},
+              {label:'YoY Growth', value:'+27%'},
+              {label:'New Accounts', value:'138'},
+              {label:'Retention', value:'94%'}
+            ] },
+          { id:'q1', type:'quote', x:56, y:400, w:600, h:160,
+            text:'Q4 was our strongest quarter on record, driven by enterprise wins and the new product line.', author:'CEO' },
+          { id:'note', type:'noteBox', x:676, y:400, w:390, h:160,
+            title:'Looking ahead:', text:'Q1 forecast revised upward. Focus shifts to scaling onboarding capacity and infrastructure.' }
+        ]
+      }
+    ]
+  },
+
+  project: {
+    theme: { brandPurple: '#420a7b', highlight: '#5631bd', logo: DEFAULT_LOGO },
+    slides: [{
+      id:'project-status', orientation:'landscape',
+      title:'Project Atlas — Status Update', subtitle:'Week 12 of 16',
+      blocks: [
+        { id:'progress', type:'statPanel', x:56, y:145, w:340, h:280,
+          title:'Progress', badge:'On Track',
+          rows:[{label:'Completed', value:'42', note:'68%'},{label:'In Progress', value:'14', note:'23%'},{label:'Blocked', value:'6', note:'9%'}] },
+        { id:'risks', type:'bulletList', x:406, y:145, w:340, h:280,
+          title:'Top Risks', items:['Vendor API delays into Q1','Two open headcount requisitions','Security review pending'] },
+        { id:'wins', type:'bulletList', x:756, y:145, w:310, h:280,
+          title:'Recent Wins', items:['Closed pilot with Customer X','Latency cut by 38%','Compliance audit passed'] },
+        { id:'next', type:'noteBox', x:56, y:445, w:1010, h:100,
+          title:'Next 2 weeks:', text:'Ship checkout v2, complete vendor integration, finalize Q1 staffing plan.' }
+      ]
+    }]
+  },
+
+  blank: BLANK_DECK
+};
+
+function loadTemplate(key) {
+  const t = TEMPLATES[key];
+  if (!t) return;
+  deckState = structuredClone(t);
+  selectedSlideIndex = 0;
+  jsonInput.value = pretty(deckState);
+  renderDeck();
+  bindAllEditors();
+  setStatus(`Loaded template: ${key}`, 'ok');
+}
+
+/* ===========================================================
+   AI PROMPT
+   =========================================================== */
+const AI_PROMPT = `You are a slide deck generator for the SRMG Slide Builder.
+Convert the user content (provided after "USER CONTENT") into a valid JSON object matching the schema below.
+Return ONLY valid JSON, no commentary, no markdown fences.
+
+# Canvas
+- Landscape slide: 1122 × 681 px (preferred).
+- Portrait slide: 794 × 1123 px.
+- Header occupies y=0–130. Content starts around y=145.
+- Margins: x=56 left, content ends at x=1066.
+
+# Schema
+{
+  "theme": { "brandPurple": "#420a7b", "highlight": "#5631bd", "logo": "https://..." },
+  "slides": [
+    {
+      "id": "unique-id",
+      "orientation": "landscape" | "portrait",
+      "title": "Slide title",
+      "subtitle": "Subtitle (optional)",
+      "blocks": [ ... ]
+    }
+  ]
+}
+
+# Block types (every block needs id, type, x, y, w, h)
+
+statPanel — titled card with stat rows + optional note.
+  { "id":"...", "type":"statPanel", "x":56, "y":145, "w":330, "h":380,
+    "title":"Old Contracts", "badge":"Total: 473",
+    "rows":[ {"label":"Saudi","value":"271","note":"57%"} ],
+    "note":"Optional context" }
+
+stage — numbered process step. Variant controls the gradient:
+  variants: "light" | "medium" | "bold" | "dark" | "success" | "warning"
+  { "id":"...", "type":"stage", "x":56, "y":145, "w":650, "h":85, "variant":"medium",
+    "number":"1", "title":"Signing Contract",
+    "trigger":"Offer Acceptance", "responsible":"Team",
+    "actions":["Offer Letter","Contract Sign"] }
+
+bulletList — { "id","type":"bulletList", "x","y","w","h", "title", "items":[...] }
+
+keyValueGrid — 1 or 2 column grid of label/value:
+  { "id","type":"keyValueGrid", "x","y","w","h", "columns":2,
+    "title":"Metrics", "items":[{"label":"Revenue","value":"$1M"}] }
+
+quote — { "id","type":"quote", "x","y","w","h", "text":"...", "author":"..." }
+
+noteBox — highlighted callout, no card chrome:
+  { "id","type":"noteBox", "x","y","w","h", "title":"Note:", "text":"..." }
+
+heading — { "id","type":"heading", "x","y","w","h", "text":"Big Heading",
+            "align":"left"|"center", "accent": true|false }
+
+image — { "id","type":"image", "x","y","w","h", "src":"https://...", "alt":"", "caption":"" }
+
+html — escape hatch: { "id","type":"html", "x","y","w","h", "html":"<div>...</div>" }
+
+# Layout rules
+- For comparisons / dashboards: use 2 or 3 columns of statPanel (≈330px wide each), starting at y=145.
+- For process flows: stack stage blocks vertically (650–700px wide, 85–95px tall), variant progressing light → medium → bold → dark → success.
+- For metric overviews: use one keyValueGrid spanning the full width with columns:2 and 4 items.
+- For section dividers: use heading with accent:true centered.
+- Always include the footer area free below y≈550 for a noteBox if there's a key takeaway.
+- Keep blocks inside x=56..1066, y=145..640 for landscape.
+
+# Output
+Return one JSON object. No prose. No code fences.
+
+USER CONTENT:
+[paste your raw notes, bullets, numbers here]
+`;
+
+function refreshPromptArea() {
+  $('#promptOutput').value = AI_PROMPT;
+}
+
+$('#copyPromptBtn').addEventListener('click', async () => {
+  try {
+    await navigator.clipboard.writeText($('#promptOutput').value);
+    setStatus('Prompt copied to clipboard ✓', 'ok');
+    const b = $('#copyPromptBtn');
+    const original = b.textContent;
+    b.textContent = '✓ Copied!';
+    setTimeout(() => b.textContent = original, 1400);
+  } catch {
+    $('#promptOutput').select();
+    document.execCommand('copy');
+    setStatus('Prompt copied (fallback)', 'ok');
+  }
+});
+
+$('#appendContentBtn').addEventListener('click', () => {
+  const ta = $('#promptOutput');
+  if (!ta.value.includes('--- YOUR CONTENT BELOW ---')) {
+    ta.value = ta.value.replace('[paste your raw notes, bullets, numbers here]',
+      '--- YOUR CONTENT BELOW ---\n\n(write your slides as bullet points, numbers, sections — the AI will figure out the layout)\n');
+  }
+  ta.focus();
+  ta.setSelectionRange(ta.value.length, ta.value.length);
+});
+
+/* ===========================================================
+   KEYBOARD SHORTCUTS
+   =========================================================== */
+document.addEventListener('keydown', (e) => {
+  // Don't hijack typing inside editors / inputs
+  const t = e.target;
+  const editing = t.isContentEditable || ['INPUT','TEXTAREA','SELECT'].includes(t.tagName);
+
+  if (e.key === 'Escape') {
+    if (editing) t.blur();
+    else selectBlock(null);
+    return;
+  }
+
+  if (editing) return;
+  if (!selectedBlockEl) return;
+
+  // Delete
+  if (e.key === 'Delete' || e.key === 'Backspace') {
+    e.preventDefault();
+    deleteBlock();
+    return;
+  }
+  // Duplicate
+  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'd') {
+    e.preventDefault();
+    duplicateBlock();
+    return;
+  }
+  // Arrows
+  const step = e.shiftKey ? 10 : 1;
+  let dx=0, dy=0;
+  if (e.key === 'ArrowLeft')  dx = -step;
+  if (e.key === 'ArrowRight') dx = +step;
+  if (e.key === 'ArrowUp')    dy = -step;
+  if (e.key === 'ArrowDown')  dy = +step;
+  if (dx || dy) {
+    e.preventDefault();
+    const el = selectedBlockEl;
+    const slide = el.closest('.slide');
+    const nx = clamp(parseFloat(el.style.left) + dx, 0, slide.clientWidth - el.offsetWidth);
+    const ny = clamp(parseFloat(el.style.top)  + dy, 0, slide.clientHeight - el.offsetHeight);
+    el.style.left = `${nx}px`;
+    el.style.top  = `${ny}px`;
+    commitGeometry(el);
+  }
+});
+
+/* ===========================================================
+   UI WIRING
+   =========================================================== */
+// Tabs
+$$('.tab').forEach(t => t.addEventListener('click', () => {
+  $$('.tab').forEach(x => x.classList.remove('active'));
+  t.classList.add('active');
+  $$('.tab-body').forEach(b => b.classList.add('hidden'));
+  $(`.tab-body[data-pane="${t.dataset.tab}"]`).classList.remove('hidden');
+}));
+
+// Collapse sidebar
+$('#collapseBtn').addEventListener('click', () => {
+  $('#app').classList.toggle('collapsed');
+  $('#collapseBtn').textContent = $('#app').classList.contains('collapsed') ? '›' : '‹';
+});
+
+// JSON buttons
+$('#renderBtn').addEventListener('click', loadFromTextarea);
+$('#syncBtn').addEventListener('click', syncToTextarea);
+$('#downloadJsonBtn').addEventListener('click', downloadJson);
+$('#importJsonBtn').addEventListener('click', importJson);
+
+// Theme
+$('#brandColor').addEventListener('input', (e) => {
+  deckState.theme = deckState.theme || {};
+  deckState.theme.brandPurple = e.target.value;
+  applyTheme();
+});
+$('#highlightColor').addEventListener('input', (e) => {
+  deckState.theme = deckState.theme || {};
+  deckState.theme.highlight = e.target.value;
+  applyTheme();
+});
+$('#logoUrl').addEventListener('change', (e) => {
+  deckState.theme = deckState.theme || {};
+  deckState.theme.logo = e.target.value.trim() || DEFAULT_LOGO;
+  renderDeck();
+  bindAllEditors();
+});
+
+// Templates
+$$('[data-template]').forEach(btn => btn.addEventListener('click', () => loadTemplate(btn.dataset.template)));
+
+// Top toolbar
+$('#addSlideBtn').addEventListener('click', addSlide);
+$('#duplicateSlideBtn').addEventListener('click', duplicateSlide);
+$('#deleteSlideBtn').addEventListener('click', deleteSlide);
+$('#duplicateBlockBtn').addEventListener('click', duplicateBlock);
+$('#deleteBlockBtn').addEventListener('click', deleteBlock);
+$('#addBlockSelect').addEventListener('change', (e) => {
+  if (e.target.value) {
+    addBlock(e.target.value);
+    e.target.value = '';
+  }
+});
+$('#snapGrid').addEventListener('change', (e) => { snapEnabled = e.target.checked; });
+$('#printBtn').addEventListener('click', printPdf);
+
+/* ===========================================================
+   INIT
+   =========================================================== */
+loadTemplate('ksa');
+jsonInput.value = pretty(deckState);
+refreshPromptArea();
+</script>
+</body>
+</html>
