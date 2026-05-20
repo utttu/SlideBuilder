@@ -229,6 +229,27 @@
   }
   .status-dot.warn { background: #f1c40f; box-shadow: 0 0 6px rgba(241,196,15,.6); }
   .status-dot.err  { background: #e74c3c; box-shadow: 0 0 6px rgba(231,76,60,.6); }
+  .modal-backdrop {
+    position: fixed;
+    inset: 0;
+    background: rgba(10, 8, 18, .62);
+    display: none;
+    align-items: center;
+    justify-content: center;
+    z-index: 1000;
+    padding: 16px;
+  }
+  .modal-backdrop.show { display: flex; }
+  .modal {
+    width: min(420px, 100%);
+    background: #1f1a2e;
+    border: 1px solid var(--chrome-line);
+    border-radius: 12px;
+    box-shadow: 0 16px 40px rgba(0,0,0,.45);
+    padding: 16px;
+  }
+  .modal h3 { margin: 0 0 8px; font-size: 15px; }
+  .modal p { margin: 0 0 14px; font-size: 13px; color: #c8bfd9; line-height: 1.5; }
 
   h2.section { font-size: 12px; margin: 18px 0 8px; color: var(--chrome-muted); text-transform: uppercase; letter-spacing: .5px; font-weight: 700; }
   h2.section:first-child { margin-top: 0; }
@@ -766,6 +787,9 @@
       <button class="secondary" id="duplicateSlideBtn">⎘ Duplicate Slide</button>
       <button class="danger" id="deleteSlideBtn">🗑 Delete Slide</button>
       <span class="divider"></span>
+      <button class="secondary" id="undoBtn" title="Undo (Ctrl/Cmd+Z)">↶ Undo</button>
+      <button class="secondary" id="redoBtn" title="Redo (Ctrl/Cmd+Shift+Z)">↷ Redo</button>
+      <span class="divider"></span>
       <select id="addBlockSelect" title="Add a card to current slide">
         <option value="">+ Add card...</option>
         <option value="statPanel">Stat Panel</option>
@@ -784,11 +808,24 @@
       <label class="grid-toggle">
         <input type="checkbox" id="snapGrid" checked> Snap to 8px
       </label>
+      <label class="grid-toggle">
+        <input type="checkbox" id="showSlideNumbers" checked> Slide numbering
+      </label>
       <span class="grow"></span>
       <button class="secondary" id="printBtn">⎙ Export PDF</button>
     </div>
     <div id="deck"></div>
   </main>
+</div>
+<div class="modal-backdrop" id="confirmModalBackdrop" role="dialog" aria-modal="true" aria-labelledby="confirmTitle">
+  <div class="modal">
+    <h3 id="confirmTitle">Confirm action</h3>
+    <p id="confirmMessage">Are you sure?</p>
+    <div class="row" style="justify-content:flex-end;">
+      <button class="ghost" id="confirmCancelBtn">Cancel</button>
+      <button class="danger" id="confirmOkBtn">Delete</button>
+    </div>
+  </div>
 </div>
 
 <script>
@@ -812,6 +849,8 @@ let deckState = structuredClone(BLANK_DECK);
 let selectedSlideIndex = 0;
 let selectedBlockEl = null;
 let snapEnabled = true;
+let showSlideNumbers = true;
+const history = { undo: [], redo: [], max: 120 };
 
 const SNAP = 8;
 
@@ -821,6 +860,8 @@ const jsonInput = $('#jsonInput');
 const deckEl = $('#deck');
 const statusEl = $('#status');
 const statusDot = $('#statusDot');
+const confirmBackdrop = $('#confirmModalBackdrop');
+const confirmMsg = $('#confirmMessage');
 
 /* ===========================================================
    UTILS
@@ -834,6 +875,87 @@ function escapeHtml(s) { return String(s ?? '').replace(/[&<>"]/g, c => ({'&':'&
 function setStatus(msg, kind='ok') {
   statusEl.textContent = msg;
   statusDot.className = 'status-dot' + (kind === 'warn' ? ' warn' : kind === 'err' ? ' err' : '');
+}
+
+function snapshotState() {
+  return JSON.stringify({
+    deck: deckState,
+    selectedSlideIndex,
+    showSlideNumbers
+  });
+}
+function applySnapshot(snapshot, msg='State restored') {
+  const parsed = JSON.parse(snapshot);
+  deckState = parsed.deck;
+  selectedSlideIndex = clamp(parsed.selectedSlideIndex ?? 0, 0, Math.max(0, deckState.slides.length - 1));
+  showSlideNumbers = parsed.showSlideNumbers !== false;
+  $('#showSlideNumbers').checked = showSlideNumbers;
+  renderDeck();
+  bindAllEditors();
+  jsonInput.value = pretty(deckState);
+  setStatus(msg, 'ok');
+  updateHistoryButtons();
+}
+function pushHistory() {
+  history.undo.push(snapshotState());
+  if (history.undo.length > history.max) history.undo.shift();
+  history.redo.length = 0;
+  updateHistoryButtons();
+}
+function undoAction() {
+  if (!history.undo.length) return;
+  history.redo.push(snapshotState());
+  applySnapshot(history.undo.pop(), 'Undo applied');
+}
+function redoAction() {
+  if (!history.redo.length) return;
+  history.undo.push(snapshotState());
+  applySnapshot(history.redo.pop(), 'Redo applied');
+}
+function updateHistoryButtons() {
+  $('#undoBtn').disabled = history.undo.length === 0;
+  $('#redoBtn').disabled = history.redo.length === 0;
+}
+
+function confirmAction(message) {
+  return new Promise(resolve => {
+    confirmMsg.textContent = message;
+    confirmBackdrop.classList.add('show');
+    const ok = $('#confirmOkBtn');
+    const cancel = $('#confirmCancelBtn');
+
+    function cleanup(answer) {
+      ok.removeEventListener('click', onOk);
+      cancel.removeEventListener('click', onCancel);
+      confirmBackdrop.removeEventListener('click', onBackdrop);
+      document.removeEventListener('keydown', onEsc);
+      confirmBackdrop.classList.remove('show');
+      resolve(answer);
+    }
+    const onOk = () => cleanup(true);
+    const onCancel = () => cleanup(false);
+    const onBackdrop = (e) => { if (e.target === confirmBackdrop) cleanup(false); };
+    const onEsc = (e) => { if (e.key === 'Escape') cleanup(false); };
+    ok.addEventListener('click', onOk);
+    cancel.addEventListener('click', onCancel);
+    confirmBackdrop.addEventListener('click', onBackdrop);
+    document.addEventListener('keydown', onEsc);
+  });
+}
+
+function validateDeckStructure(next) {
+  if (!next || typeof next !== 'object') throw new Error('JSON root must be an object.');
+  if (!Array.isArray(next.slides)) throw new Error('JSON must have a "slides" array.');
+  next.slides.forEach((slide, si) => {
+    if (!slide || typeof slide !== 'object') throw new Error(`Slide ${si + 1} must be an object.`);
+    if (!Array.isArray(slide.blocks)) throw new Error(`Slide ${si + 1} must include a "blocks" array.`);
+    slide.blocks.forEach((block, bi) => {
+      if (!block || typeof block !== 'object') throw new Error(`Slide ${si + 1}, block ${bi + 1} must be an object.`);
+      ['id','type','x','y','w','h'].forEach(k => {
+        if (!(k in block)) throw new Error(`Slide ${si + 1}, block ${bi + 1} missing "${k}".`);
+      });
+    });
+  });
 }
 
 function applyTheme() {
@@ -879,7 +1001,7 @@ function renderSlide(slide, si) {
   const logo = slide.logo || deckState.theme?.logo || DEFAULT_LOGO;
 
   wrap.innerHTML = `
-    <div class="slide-tag">Slide ${si + 1} of ${deckState.slides.length} · ${escapeHtml(slide.id || '')}</div>
+    ${showSlideNumbers ? `<div class="slide-tag">Slide ${si + 1} of ${deckState.slides.length} · ${escapeHtml(slide.id || '')}</div>` : ''}
     <div class="slide-header">
       <div class="title-group">
         <h1 contenteditable="true" data-bind="slides.${si}.title" spellcheck="false">${escapeHtml(slide.title || 'Untitled')}</h1>
@@ -1042,11 +1164,17 @@ function bindHeaderEdits(slideEl) {
 function attachFieldEditor(el) {
   // For html blocks we save innerHTML, everything else uses innerText to keep it clean
   const isHtml = el.dataset.bind.endsWith('.html');
+  el.addEventListener('focus', () => {
+    if (el.dataset.editSession === '1') return;
+    pushHistory();
+    el.dataset.editSession = '1';
+  });
   el.addEventListener('input', () => {
     const val = isHtml ? el.innerHTML : el.innerText.trim();
     setByPath(deckState, el.dataset.bind, val);
     setStatus('Edited · use ⇡ Sync to update JSON view', 'warn');
   });
+  el.addEventListener('blur', () => { el.dataset.editSession = '0'; });
   // Paste as plain text (except html blocks)
   if (!isHtml) {
     el.addEventListener('paste', e => {
@@ -1229,6 +1357,7 @@ function newBlock(type, slide) {
 }
 
 function addBlock(type) {
+  pushHistory();
   const slide = deckState.slides[selectedSlideIndex];
   if (!slide) return;
   slide.blocks = slide.blocks || [];
@@ -1244,6 +1373,7 @@ function addBlock(type) {
 
 function deleteBlock() {
   if (!selectedBlockEl) return;
+  pushHistory();
   const si = Number(selectedBlockEl.dataset.slideIndex);
   const bi = Number(selectedBlockEl.dataset.blockIndex);
   deckState.slides[si].blocks.splice(bi, 1);
@@ -1254,6 +1384,7 @@ function deleteBlock() {
 
 function duplicateBlock() {
   if (!selectedBlockEl) return;
+  pushHistory();
   syncToTextarea();
   const si = Number(selectedBlockEl.dataset.slideIndex);
   const bi = Number(selectedBlockEl.dataset.blockIndex);
@@ -1269,6 +1400,7 @@ function duplicateBlock() {
 
 function addSlide() {
   syncToTextarea();
+  pushHistory();
   const n = deckState.slides.length + 1;
   deckState.slides.push({
     id: `slide-${n}`,
@@ -1289,6 +1421,7 @@ function addSlide() {
 function duplicateSlide() {
   syncToTextarea();
   if (!deckState.slides[selectedSlideIndex]) return;
+  pushHistory();
   const clone = structuredClone(deckState.slides[selectedSlideIndex]);
   clone.id = `${clone.id}-copy`;
   deckState.slides.splice(selectedSlideIndex + 1, 0, clone);
@@ -1298,12 +1431,14 @@ function duplicateSlide() {
   jsonInput.value = pretty(deckState);
 }
 
-function deleteSlide() {
+async function deleteSlide() {
   if (deckState.slides.length <= 1) {
     setStatus('Cannot delete the last slide.', 'warn');
     return;
   }
-  if (!confirm(`Delete slide "${deckState.slides[selectedSlideIndex]?.title}"?`)) return;
+  const confirmed = await confirmAction(`Delete slide "${deckState.slides[selectedSlideIndex]?.title}"?`);
+  if (!confirmed) return;
+  pushHistory();
   deckState.slides.splice(selectedSlideIndex, 1);
   selectedSlideIndex = clamp(selectedSlideIndex, 0, deckState.slides.length - 1);
   renderDeck();
@@ -1316,8 +1451,9 @@ function deleteSlide() {
    =========================================================== */
 function loadFromTextarea() {
   try {
+    pushHistory();
     const next = JSON.parse(jsonInput.value);
-    if (!Array.isArray(next.slides)) throw new Error('JSON must have a "slides" array.');
+    validateDeckStructure(next);
     deckState = next;
     selectedSlideIndex = 0;
     renderDeck();
@@ -1465,6 +1601,7 @@ const TEMPLATES = {
 function loadTemplate(key) {
   const t = TEMPLATES[key];
   if (!t) return;
+  pushHistory();
   deckState = structuredClone(t);
   selectedSlideIndex = 0;
   jsonInput.value = pretty(deckState);
@@ -1561,9 +1698,7 @@ $('#copyPromptBtn').addEventListener('click', async () => {
     b.textContent = '✓ Copied!';
     setTimeout(() => b.textContent = original, 1400);
   } catch {
-    $('#promptOutput').select();
-    document.execCommand('copy');
-    setStatus('Prompt copied (fallback)', 'ok');
+    setStatus('Clipboard denied/unavailable. Select and copy manually.', 'warn');
   }
 });
 
@@ -1591,6 +1726,17 @@ document.addEventListener('keydown', (e) => {
     return;
   }
 
+  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') {
+    e.preventDefault();
+    if (e.shiftKey) redoAction();
+    else undoAction();
+    return;
+  }
+  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'y') {
+    e.preventDefault();
+    redoAction();
+    return;
+  }
   if (editing) return;
   if (!selectedBlockEl) return;
 
@@ -1614,6 +1760,7 @@ document.addEventListener('keydown', (e) => {
   if (e.key === 'ArrowUp')    dy = -step;
   if (e.key === 'ArrowDown')  dy = +step;
   if (dx || dy) {
+    pushHistory();
     e.preventDefault();
     const el = selectedBlockEl;
     const slide = el.closest('.slide');
@@ -1673,6 +1820,8 @@ $$('[data-template]').forEach(btn => btn.addEventListener('click', () => loadTem
 $('#addSlideBtn').addEventListener('click', addSlide);
 $('#duplicateSlideBtn').addEventListener('click', duplicateSlide);
 $('#deleteSlideBtn').addEventListener('click', deleteSlide);
+$('#undoBtn').addEventListener('click', undoAction);
+$('#redoBtn').addEventListener('click', redoAction);
 $('#duplicateBlockBtn').addEventListener('click', duplicateBlock);
 $('#deleteBlockBtn').addEventListener('click', deleteBlock);
 $('#addBlockSelect').addEventListener('change', (e) => {
@@ -1682,6 +1831,12 @@ $('#addBlockSelect').addEventListener('change', (e) => {
   }
 });
 $('#snapGrid').addEventListener('change', (e) => { snapEnabled = e.target.checked; });
+$('#showSlideNumbers').addEventListener('change', (e) => {
+  pushHistory();
+  showSlideNumbers = e.target.checked;
+  renderDeck();
+  bindAllEditors();
+});
 $('#printBtn').addEventListener('click', printPdf);
 
 /* ===========================================================
@@ -1690,6 +1845,7 @@ $('#printBtn').addEventListener('click', printPdf);
 loadTemplate('ksa');
 jsonInput.value = pretty(deckState);
 refreshPromptArea();
+updateHistoryButtons();
 </script>
 </body>
 </html>
