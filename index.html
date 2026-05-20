@@ -787,6 +787,9 @@
       <button class="secondary" id="duplicateSlideBtn">⎘ Duplicate Slide</button>
       <button class="danger" id="deleteSlideBtn">🗑 Delete Slide</button>
       <span class="divider"></span>
+      <button class="secondary" id="undoBtn" title="Undo (Ctrl/Cmd+Z)">↶ Undo</button>
+      <button class="secondary" id="redoBtn" title="Redo (Ctrl/Cmd+Shift+Z)">↷ Redo</button>
+      <span class="divider"></span>
       <select id="addBlockSelect" title="Add a card to current slide">
         <option value="">+ Add card...</option>
         <option value="statPanel">Stat Panel</option>
@@ -804,6 +807,9 @@
       <span class="divider"></span>
       <label class="grid-toggle">
         <input type="checkbox" id="snapGrid" checked> Snap to 8px
+      </label>
+      <label class="grid-toggle">
+        <input type="checkbox" id="showSlideNumbers" checked> Slide numbering
       </label>
       <span class="grow"></span>
       <button class="secondary" id="printBtn">⎙ Export PDF</button>
@@ -843,6 +849,8 @@ let deckState = structuredClone(BLANK_DECK);
 let selectedSlideIndex = 0;
 let selectedBlockEl = null;
 let snapEnabled = true;
+let showSlideNumbers = true;
+const history = { undo: [], redo: [], max: 120 };
 
 const SNAP = 8;
 
@@ -867,6 +875,46 @@ function escapeHtml(s) { return String(s ?? '').replace(/[&<>"]/g, c => ({'&':'&
 function setStatus(msg, kind='ok') {
   statusEl.textContent = msg;
   statusDot.className = 'status-dot' + (kind === 'warn' ? ' warn' : kind === 'err' ? ' err' : '');
+}
+
+function snapshotState() {
+  return JSON.stringify({
+    deck: deckState,
+    selectedSlideIndex,
+    showSlideNumbers
+  });
+}
+function applySnapshot(snapshot, msg='State restored') {
+  const parsed = JSON.parse(snapshot);
+  deckState = parsed.deck;
+  selectedSlideIndex = clamp(parsed.selectedSlideIndex ?? 0, 0, Math.max(0, deckState.slides.length - 1));
+  showSlideNumbers = parsed.showSlideNumbers !== false;
+  $('#showSlideNumbers').checked = showSlideNumbers;
+  renderDeck();
+  bindAllEditors();
+  jsonInput.value = pretty(deckState);
+  setStatus(msg, 'ok');
+  updateHistoryButtons();
+}
+function pushHistory() {
+  history.undo.push(snapshotState());
+  if (history.undo.length > history.max) history.undo.shift();
+  history.redo.length = 0;
+  updateHistoryButtons();
+}
+function undoAction() {
+  if (!history.undo.length) return;
+  history.redo.push(snapshotState());
+  applySnapshot(history.undo.pop(), 'Undo applied');
+}
+function redoAction() {
+  if (!history.redo.length) return;
+  history.undo.push(snapshotState());
+  applySnapshot(history.redo.pop(), 'Redo applied');
+}
+function updateHistoryButtons() {
+  $('#undoBtn').disabled = history.undo.length === 0;
+  $('#redoBtn').disabled = history.redo.length === 0;
 }
 
 function confirmAction(message) {
@@ -953,7 +1001,7 @@ function renderSlide(slide, si) {
   const logo = slide.logo || deckState.theme?.logo || DEFAULT_LOGO;
 
   wrap.innerHTML = `
-    <div class="slide-tag">Slide ${si + 1} of ${deckState.slides.length} · ${escapeHtml(slide.id || '')}</div>
+    ${showSlideNumbers ? `<div class="slide-tag">Slide ${si + 1} of ${deckState.slides.length} · ${escapeHtml(slide.id || '')}</div>` : ''}
     <div class="slide-header">
       <div class="title-group">
         <h1 contenteditable="true" data-bind="slides.${si}.title" spellcheck="false">${escapeHtml(slide.title || 'Untitled')}</h1>
@@ -1116,11 +1164,17 @@ function bindHeaderEdits(slideEl) {
 function attachFieldEditor(el) {
   // For html blocks we save innerHTML, everything else uses innerText to keep it clean
   const isHtml = el.dataset.bind.endsWith('.html');
+  el.addEventListener('focus', () => {
+    if (el.dataset.editSession === '1') return;
+    pushHistory();
+    el.dataset.editSession = '1';
+  });
   el.addEventListener('input', () => {
     const val = isHtml ? el.innerHTML : el.innerText.trim();
     setByPath(deckState, el.dataset.bind, val);
     setStatus('Edited · use ⇡ Sync to update JSON view', 'warn');
   });
+  el.addEventListener('blur', () => { el.dataset.editSession = '0'; });
   // Paste as plain text (except html blocks)
   if (!isHtml) {
     el.addEventListener('paste', e => {
@@ -1303,6 +1357,7 @@ function newBlock(type, slide) {
 }
 
 function addBlock(type) {
+  pushHistory();
   const slide = deckState.slides[selectedSlideIndex];
   if (!slide) return;
   slide.blocks = slide.blocks || [];
@@ -1318,6 +1373,7 @@ function addBlock(type) {
 
 function deleteBlock() {
   if (!selectedBlockEl) return;
+  pushHistory();
   const si = Number(selectedBlockEl.dataset.slideIndex);
   const bi = Number(selectedBlockEl.dataset.blockIndex);
   deckState.slides[si].blocks.splice(bi, 1);
@@ -1328,6 +1384,7 @@ function deleteBlock() {
 
 function duplicateBlock() {
   if (!selectedBlockEl) return;
+  pushHistory();
   syncToTextarea();
   const si = Number(selectedBlockEl.dataset.slideIndex);
   const bi = Number(selectedBlockEl.dataset.blockIndex);
@@ -1343,6 +1400,7 @@ function duplicateBlock() {
 
 function addSlide() {
   syncToTextarea();
+  pushHistory();
   const n = deckState.slides.length + 1;
   deckState.slides.push({
     id: `slide-${n}`,
@@ -1363,6 +1421,7 @@ function addSlide() {
 function duplicateSlide() {
   syncToTextarea();
   if (!deckState.slides[selectedSlideIndex]) return;
+  pushHistory();
   const clone = structuredClone(deckState.slides[selectedSlideIndex]);
   clone.id = `${clone.id}-copy`;
   deckState.slides.splice(selectedSlideIndex + 1, 0, clone);
@@ -1379,6 +1438,7 @@ async function deleteSlide() {
   }
   const confirmed = await confirmAction(`Delete slide "${deckState.slides[selectedSlideIndex]?.title}"?`);
   if (!confirmed) return;
+  pushHistory();
   deckState.slides.splice(selectedSlideIndex, 1);
   selectedSlideIndex = clamp(selectedSlideIndex, 0, deckState.slides.length - 1);
   renderDeck();
@@ -1391,6 +1451,7 @@ async function deleteSlide() {
    =========================================================== */
 function loadFromTextarea() {
   try {
+    pushHistory();
     const next = JSON.parse(jsonInput.value);
     validateDeckStructure(next);
     deckState = next;
@@ -1540,6 +1601,7 @@ const TEMPLATES = {
 function loadTemplate(key) {
   const t = TEMPLATES[key];
   if (!t) return;
+  pushHistory();
   deckState = structuredClone(t);
   selectedSlideIndex = 0;
   jsonInput.value = pretty(deckState);
@@ -1664,6 +1726,17 @@ document.addEventListener('keydown', (e) => {
     return;
   }
 
+  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') {
+    e.preventDefault();
+    if (e.shiftKey) redoAction();
+    else undoAction();
+    return;
+  }
+  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'y') {
+    e.preventDefault();
+    redoAction();
+    return;
+  }
   if (editing) return;
   if (!selectedBlockEl) return;
 
@@ -1687,6 +1760,7 @@ document.addEventListener('keydown', (e) => {
   if (e.key === 'ArrowUp')    dy = -step;
   if (e.key === 'ArrowDown')  dy = +step;
   if (dx || dy) {
+    pushHistory();
     e.preventDefault();
     const el = selectedBlockEl;
     const slide = el.closest('.slide');
@@ -1746,6 +1820,8 @@ $$('[data-template]').forEach(btn => btn.addEventListener('click', () => loadTem
 $('#addSlideBtn').addEventListener('click', addSlide);
 $('#duplicateSlideBtn').addEventListener('click', duplicateSlide);
 $('#deleteSlideBtn').addEventListener('click', deleteSlide);
+$('#undoBtn').addEventListener('click', undoAction);
+$('#redoBtn').addEventListener('click', redoAction);
 $('#duplicateBlockBtn').addEventListener('click', duplicateBlock);
 $('#deleteBlockBtn').addEventListener('click', deleteBlock);
 $('#addBlockSelect').addEventListener('change', (e) => {
@@ -1755,6 +1831,12 @@ $('#addBlockSelect').addEventListener('change', (e) => {
   }
 });
 $('#snapGrid').addEventListener('change', (e) => { snapEnabled = e.target.checked; });
+$('#showSlideNumbers').addEventListener('change', (e) => {
+  pushHistory();
+  showSlideNumbers = e.target.checked;
+  renderDeck();
+  bindAllEditors();
+});
 $('#printBtn').addEventListener('click', printPdf);
 
 /* ===========================================================
@@ -1763,6 +1845,7 @@ $('#printBtn').addEventListener('click', printPdf);
 loadTemplate('ksa');
 jsonInput.value = pretty(deckState);
 refreshPromptArea();
+updateHistoryButtons();
 </script>
 </body>
 </html>
