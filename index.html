@@ -229,6 +229,27 @@
   }
   .status-dot.warn { background: #f1c40f; box-shadow: 0 0 6px rgba(241,196,15,.6); }
   .status-dot.err  { background: #e74c3c; box-shadow: 0 0 6px rgba(231,76,60,.6); }
+  .modal-backdrop {
+    position: fixed;
+    inset: 0;
+    background: rgba(10, 8, 18, .62);
+    display: none;
+    align-items: center;
+    justify-content: center;
+    z-index: 1000;
+    padding: 16px;
+  }
+  .modal-backdrop.show { display: flex; }
+  .modal {
+    width: min(420px, 100%);
+    background: #1f1a2e;
+    border: 1px solid var(--chrome-line);
+    border-radius: 12px;
+    box-shadow: 0 16px 40px rgba(0,0,0,.45);
+    padding: 16px;
+  }
+  .modal h3 { margin: 0 0 8px; font-size: 15px; }
+  .modal p { margin: 0 0 14px; font-size: 13px; color: #c8bfd9; line-height: 1.5; }
 
   h2.section { font-size: 12px; margin: 18px 0 8px; color: var(--chrome-muted); text-transform: uppercase; letter-spacing: .5px; font-weight: 700; }
   h2.section:first-child { margin-top: 0; }
@@ -790,6 +811,16 @@
     <div id="deck"></div>
   </main>
 </div>
+<div class="modal-backdrop" id="confirmModalBackdrop" role="dialog" aria-modal="true" aria-labelledby="confirmTitle">
+  <div class="modal">
+    <h3 id="confirmTitle">Confirm action</h3>
+    <p id="confirmMessage">Are you sure?</p>
+    <div class="row" style="justify-content:flex-end;">
+      <button class="ghost" id="confirmCancelBtn">Cancel</button>
+      <button class="danger" id="confirmOkBtn">Delete</button>
+    </div>
+  </div>
+</div>
 
 <script>
 /* ===========================================================
@@ -821,6 +852,8 @@ const jsonInput = $('#jsonInput');
 const deckEl = $('#deck');
 const statusEl = $('#status');
 const statusDot = $('#statusDot');
+const confirmBackdrop = $('#confirmModalBackdrop');
+const confirmMsg = $('#confirmMessage');
 
 /* ===========================================================
    UTILS
@@ -834,6 +867,47 @@ function escapeHtml(s) { return String(s ?? '').replace(/[&<>"]/g, c => ({'&':'&
 function setStatus(msg, kind='ok') {
   statusEl.textContent = msg;
   statusDot.className = 'status-dot' + (kind === 'warn' ? ' warn' : kind === 'err' ? ' err' : '');
+}
+
+function confirmAction(message) {
+  return new Promise(resolve => {
+    confirmMsg.textContent = message;
+    confirmBackdrop.classList.add('show');
+    const ok = $('#confirmOkBtn');
+    const cancel = $('#confirmCancelBtn');
+
+    function cleanup(answer) {
+      ok.removeEventListener('click', onOk);
+      cancel.removeEventListener('click', onCancel);
+      confirmBackdrop.removeEventListener('click', onBackdrop);
+      document.removeEventListener('keydown', onEsc);
+      confirmBackdrop.classList.remove('show');
+      resolve(answer);
+    }
+    const onOk = () => cleanup(true);
+    const onCancel = () => cleanup(false);
+    const onBackdrop = (e) => { if (e.target === confirmBackdrop) cleanup(false); };
+    const onEsc = (e) => { if (e.key === 'Escape') cleanup(false); };
+    ok.addEventListener('click', onOk);
+    cancel.addEventListener('click', onCancel);
+    confirmBackdrop.addEventListener('click', onBackdrop);
+    document.addEventListener('keydown', onEsc);
+  });
+}
+
+function validateDeckStructure(next) {
+  if (!next || typeof next !== 'object') throw new Error('JSON root must be an object.');
+  if (!Array.isArray(next.slides)) throw new Error('JSON must have a "slides" array.');
+  next.slides.forEach((slide, si) => {
+    if (!slide || typeof slide !== 'object') throw new Error(`Slide ${si + 1} must be an object.`);
+    if (!Array.isArray(slide.blocks)) throw new Error(`Slide ${si + 1} must include a "blocks" array.`);
+    slide.blocks.forEach((block, bi) => {
+      if (!block || typeof block !== 'object') throw new Error(`Slide ${si + 1}, block ${bi + 1} must be an object.`);
+      ['id','type','x','y','w','h'].forEach(k => {
+        if (!(k in block)) throw new Error(`Slide ${si + 1}, block ${bi + 1} missing "${k}".`);
+      });
+    });
+  });
 }
 
 function applyTheme() {
@@ -1298,12 +1372,13 @@ function duplicateSlide() {
   jsonInput.value = pretty(deckState);
 }
 
-function deleteSlide() {
+async function deleteSlide() {
   if (deckState.slides.length <= 1) {
     setStatus('Cannot delete the last slide.', 'warn');
     return;
   }
-  if (!confirm(`Delete slide "${deckState.slides[selectedSlideIndex]?.title}"?`)) return;
+  const confirmed = await confirmAction(`Delete slide "${deckState.slides[selectedSlideIndex]?.title}"?`);
+  if (!confirmed) return;
   deckState.slides.splice(selectedSlideIndex, 1);
   selectedSlideIndex = clamp(selectedSlideIndex, 0, deckState.slides.length - 1);
   renderDeck();
@@ -1317,7 +1392,7 @@ function deleteSlide() {
 function loadFromTextarea() {
   try {
     const next = JSON.parse(jsonInput.value);
-    if (!Array.isArray(next.slides)) throw new Error('JSON must have a "slides" array.');
+    validateDeckStructure(next);
     deckState = next;
     selectedSlideIndex = 0;
     renderDeck();
@@ -1561,9 +1636,7 @@ $('#copyPromptBtn').addEventListener('click', async () => {
     b.textContent = '✓ Copied!';
     setTimeout(() => b.textContent = original, 1400);
   } catch {
-    $('#promptOutput').select();
-    document.execCommand('copy');
-    setStatus('Prompt copied (fallback)', 'ok');
+    setStatus('Clipboard denied/unavailable. Select and copy manually.', 'warn');
   }
 });
 
